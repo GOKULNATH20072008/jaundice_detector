@@ -1,0 +1,14 @@
+Test Accuracy: 0.8974
+
+              precision    recall  f1-score   support
+
+ healthy_eye       0.90      0.90      0.90        21
+jaundice_eye       0.89      0.89      0.89        18
+
+    accuracy                           0.90        39
+   macro avg       0.90      0.90      0.90        39
+weighted avg       0.90      0.90      0.90        39
+
+Confusion Matrix:
+[[19  2]
+ [ 2 16]]

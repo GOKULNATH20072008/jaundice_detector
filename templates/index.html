@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jaundice Detector</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="card">
+    <div class="badge">AI · Eye Screening</div>
+    <h1>Jaundice Detector</h1>
+    <p class="subtitle">Upload an eye photo and check for jaundice.</p>
+
+    <label id="drop" for="file-input">
+      <input id="file-input" type="file" accept="image/*" hidden>
+      <div class="drop-inner" id="drop-inner">
+        <span class="icon">🫥</span>
+        <span class="hint">Click to choose an image</span>
+        <span class="or">or drag &amp; drop</span>
+      </div>
+    </label>
+
+    <div id="preview-wrap" class="hidden">
+      <img id="preview" alt="preview">
+      <button id="clear-btn" type="button">Remove</button>
+    </div>
+
+    <button id="submit-btn" type="button" disabled>Analyze</button>
+
+    <div id="result" class="hidden">
+      <div class="result-line">
+        <span class="badge" id="result-badge">HEALTHY</span>
+        <span class="confidence" id="result-conf"></span>
+      </div>
+      <div class="bars">
+        <div class="bar-row">
+          <span>Healthy</span>
+          <div class="bar"><div id="bar-healthy" class="bar-fill"></div></div>
+          <span id="pct-healthy">0%</span>
+        </div>
+        <div class="bar-row">
+          <span>Jaundice</span>
+          <div class="bar"><div id="bar-jaundice" class="bar-fill"></div></div>
+          <span id="pct-jaundice">0%</span>
+        </div>
+      </div>
+    </div>
+
+    <p id="error" class="error hidden"></p>
+    <p class="disclaimer">For screening only — not a medical diagnosis. Consult a doctor.</p>
+  </main>
+
+  <script>
+    const input = document.getElementById("file-input");
+    const drop = document.getElementById("drop");
+    const dropInner = document.getElementById("drop-inner");
+    const previewWrap = document.getElementById("preview-wrap");
+    const preview = document.getElementById("preview");
+    const submitBtn = document.getElementById("submit-btn");
+    const removeBtn = document.getElementById("clear-btn");
+    const result = document.getElementById("result");
+    const error = document.getElementById("error");
+    const spinner = document.getElementById("result");
+
+    let selectedFile = null;
+
+    function showPreview(file) {
+      selectedFile = file;
+      preview.src = URL.createObjectURL(file);
+      previewWrap.classList.remove("hidden");
+      drop.classList.add("hidden");
+      submitBtn.disabled = false;
+      error.classList.add("hidden");
+      result.classList.add("hidden");
+    }
+
+    input.addEventListener("change", () => {
+      if (input.files.length) showPreview(input.files[0]);
+    });
+
+    ["dragover", "dragenter"].forEach((evt) =>
+      drop.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropInner.classList.add("dragging");
+      })
+    );
+    ["dragleave", "drop"].forEach((evt) =>
+      drop.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropInner.classList.remove("dragging");
+      })
+    );
+    drop.addEventListener("drop", (e) => {
+      const file = e.dataTransfer.files[0];
+      if (file) showPreview(file);
+    });
+
+    removeBtn.addEventListener("click", () => {
+      selectedFile = null;
+      input.value = "";
+      preview.src = "";
+      previewWrap.classList.add("hidden");
+      drop.classList.remove("hidden");
+      submitBtn.disabled = true;
+      result.classList.add("hidden");
+    });
+
+    submitBtn.addEventListener("click", async () => {
+      if (!selectedFile) return;
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Analyzing…";
+      error.classList.add("hidden");
+      result.classList.add("hidden");
+
+      const form = new FormData();
+      form.append("image", selectedFile);
+
+      try {
+        const resp = await fetch("/predict", { method: "POST", body: form });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || "Something went wrong");
+
+        const isJaundice = data.class === "jaundice_eye";
+        document.getElementById("result-badge").textContent = isJaundice
+          ? "JAUNDICE DETECTED"
+          : "HEALTHY";
+        document.getElementById("result-badge").className =
+          "badge " + (isJaundice ? "red" : "green");
+        document.getElementById("result-conf").textContent =
+          "Confidence " + (data.confidence * 100).toFixed(1) + "%";
+
+        const pHealthy = (data.probabilities["healthy_eye"] * 100).toFixed(1);
+        const pJaundice = (data.probabilities["jaundice_eye"] * 100).toFixed(1);
+        document.getElementById("bar-healthy").style.width = pHealthy + "%";
+        document.getElementById("pct-healthy").textContent = pHealthy + "%";
+        document.getElementById("bar-jaundice").style.width = pJaundice + "%";
+        document.getElementById("pct-jaundice").textContent = pJaundice + "%";
+
+        result.classList.remove("hidden");
+      } catch (err) {
+        error.textContent = err.message;
+        error.classList.remove("hidden");
+      } finally {
+        submitBtn.disabled = !selectedFile;
+        submitBtn.textContent = "Analyze";
+      }
+    });
+  </script>
+</body>
+</html>
