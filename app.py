@@ -20,6 +20,8 @@ MODEL_PATH = os.path.join(BASE_DIR, "outputs", "model_jaundice.pth")
 LABEL_MAP_PATH = os.path.join(BASE_DIR, "outputs", "label_map.json")
 ALLOWED_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/bmp"}
 LOW_CONFIDENCE = 0.55
+MIN_IMG_EDGE = 100
+MAX_IMG_EDGE = 2600
 
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
@@ -111,6 +113,18 @@ def predict():
         image = Image.open(io.BytesIO(file.read())).convert("RGB")
     except Exception:
         return jsonify({"error": "Could not read image"}), 400
+
+    width, height = image.size
+    if min(width, height) < MIN_IMG_EDGE or max(width, height) > MAX_IMG_EDGE:
+        return jsonify(
+            {
+                "error": (
+                    f"Unsupported image size {width}x{height}px. "
+                    f"Please upload an eye photo between {MIN_IMG_EDGE} and "
+                    f"{MAX_IMG_EDGE} pixels on each side."
+                )
+            }
+        ), 400
 
     if not is_eye_image(image):
         return jsonify(
