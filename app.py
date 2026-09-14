@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import os
 import threading
 
@@ -12,6 +13,10 @@ import torch  # noqa: E402
 from flask import Flask, jsonify, render_template, request  # noqa: E402
 from PIL import Image  # noqa: E402
 from torchvision import models, transforms  # noqa: E402
+
+from eye_gate import gate_is_real_eye  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 torch.set_num_threads(1)
 
@@ -35,6 +40,8 @@ MIN_REGION_STD = 18.0
 MSG_NON_EYE = "No valid human eye detected. Please upload a clear photo of a human eye."
 MSG_QUALITY = "Image quality is insufficient. Please upload a clearer, well-lit eye photo."
 MSG_MODEL_ERROR = "Unable to analyze this image. Please try again."
+
+EYE_GATE_ENABLED = os.environ.get("EYE_GATE_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
@@ -173,6 +180,20 @@ def predict():
                 )
             }
         ), 400
+
+    if not EYE_GATE_ENABLED:
+        logger.warning("EYE_GATE_ENABLED=false — skipping semantic eye gate, falling back to Haar-cascade-only behavior")
+    else:
+        gate_result = gate_is_real_eye(image)
+        if not gate_result["is_real_human_eye"]:
+            logger.info("Gate rejected image: %s", gate_result.get("reason"))
+            return jsonify(
+                {
+                    "result": "NOT_AN_EYE",
+                    "tone": "warning",
+                    "warning": MSG_NON_EYE,
+                }
+            )
 
     eye_box = get_eye_box(image)
     if eye_box is None:

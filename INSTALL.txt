@@ -78,6 +78,44 @@ Open your browser at: **http://127.0.0.1:5000**
 Upload an eye photo, press **Analyze**, and the app returns HEALTHY or
 JAUNDICE DETECTED with a confidence score.
 
+### Semantic "real human eye" gate
+
+Before any Haar cascade or classifier runs, `/predict` calls a vision LLM
+(`claude-sonnet-4-6` via the Anthropic Messages API) to confirm the upload is a
+genuine close-up photograph of a real human eye. Posters, artwork, screenshots,
+animal/cartoon/doll eyes, photo-of-photos, and random objects are rejected with
+`NOT_AN_EYE` up front. The gate fails **closed** — a missing key, timeout, or
+malformed response never lets an image through.
+
+Environment variables (set on Railway under Settings → Variables, or in your
+shell — never hardcode the key):
+
+```
+ANTHROPIC_API_KEY=<your-api-key>   # required for the semantic gate
+EYE_GATE_ENABLED=true              # default true; set false to fall back to
+                                   # Haar-cascade-only behavior (logs a warning)
+```
+
+Example (local PowerShell):
+
+```
+$env:ANTHROPIC_API_KEY="sk-ant-..."
+$env:EYE_GATE_ENABLED="true"
+python app.py
+```
+
+Run the unit tests (no API call needed — HTTP is mocked):
+
+```
+python tests\test_eye_gate.py
+```
+
+For periodic validation against the real API (requires the key):
+
+```
+python tests\run_integration.py
+```
+
 ## 7. CLI prediction (optional)
 
 Predict a single image from the command line:
