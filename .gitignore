@@ -3,3 +3,4 @@ outputs/*.pth
 __pycache__/
 *.pyc
 .venv/
+.env

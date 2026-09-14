@@ -12,6 +12,20 @@ ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 GATE_TIMEOUT = 10
 MODEL = "claude-sonnet-4-6"
 
+
+def _load_api_key():
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if key:
+        return key
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("ANTHROPIC_API_KEY="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return ""
+
 SYSTEM_PROMPT = """\
 You are a strict image gatekeeper for a medical screening tool. You will be shown one image.
 
@@ -52,7 +66,7 @@ def _parse_gate_response(text):
 
 
 def gate_is_real_eye(image):
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = _load_api_key()
     if not api_key:
         logger.warning("ANTHROPIC_API_KEY not set — gate disabled, failing closed")
         return {"is_real_human_eye": False, "reason": "gate_api_error"}
