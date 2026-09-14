@@ -26,6 +26,12 @@ def _load_api_key():
                     return line.split("=", 1)[1].strip().strip('"').strip("'")
     return ""
 
+
+def gate_available():
+    """True only if a real API key is configured. When False the caller should
+    fall back to the existing Haar-cascade pipeline instead of blocking eyes."""
+    return bool(_load_api_key())
+
 SYSTEM_PROMPT = """\
 You are a strict image gatekeeper for a medical screening tool. You will be shown one image.
 

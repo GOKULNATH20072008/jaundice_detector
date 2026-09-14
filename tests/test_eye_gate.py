@@ -178,7 +178,8 @@ class TestFlaskShortCircuit(unittest.TestCase):
         )
 
     def test_gate_reject_shortcircuits_pipeline(self):
-        with mock.patch.object(sys.modules["app"], "gate_is_real_eye", return_value={"is_real_human_eye": False, "reason": "meme"}) as gate, \
+        with mock.patch.object(sys.modules["app"], "gate_available", return_value=True), \
+             mock.patch.object(sys.modules["app"], "gate_is_real_eye", return_value={"is_real_human_eye": False, "reason": "meme"}) as gate, \
              mock.patch.object(sys.modules["app"], "get_eye_box", side_effect=AssertionError("must not run")) as haar, \
              mock.patch.object(sys.modules["app"], "get_model", side_effect=AssertionError("must not run")):
             resp = self._post("emoji.jpg")
@@ -189,9 +190,22 @@ class TestFlaskShortCircuit(unittest.TestCase):
         self.assertEqual(data["result"], "NOT_AN_EYE")
         self.assertEqual(data["tone"], "warning")
 
+    def test_no_api_key_skips_gate_and_still_finds_eye(self):
+        app_mod = sys.modules["app"]
+        with mock.patch.object(app_mod, "gate_available", return_value=False) as available, \
+             mock.patch.object(app_mod, "gate_is_real_eye", side_effect=AssertionError("must not call gate without a key")) as gate:
+            resp = self._post("eye_light.jpg")
+        available.assert_called_once()
+        gate.assert_not_called()
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertIn(data["result"], ("JAUNDICE DETECTED", "HEALTHY", "UNCERTAIN"))
+        self.assertEqual(data["tone"], "ok")
+
     def test_gate_disabled_falls_back_to_haar(self):
         app_mod = sys.modules["app"]
-        with mock.patch.object(app_mod, "gate_is_real_eye", side_effect=AssertionError("must not call gate when disabled")) as gate, \
+        with mock.patch.object(app_mod, "gate_available", return_value=True), \
+             mock.patch.object(app_mod, "gate_is_real_eye", side_effect=AssertionError("must not call gate when disabled")) as gate, \
              mock.patch.object(app_mod, "EYE_GATE_ENABLED", False):
             resp = self._post("eye_light.jpg")
         gate.assert_not_called()
@@ -200,7 +214,8 @@ class TestFlaskShortCircuit(unittest.TestCase):
         self.assertIn(data["result"], ("JAUNDICE DETECTED", "HEALTHY", "UNCERTAIN"))
 
     def test_valid_eye_flows_to_classifier_when_gate_passes(self):
-        with mock.patch.object(sys.modules["app"], "gate_is_real_eye", return_value={"is_real_human_eye": True, "reason": "close-up human eye"}):
+        with mock.patch.object(sys.modules["app"], "gate_available", return_value=True), \
+             mock.patch.object(sys.modules["app"], "gate_is_real_eye", return_value={"is_real_human_eye": True, "reason": "close-up human eye"}):
             resp = self._post("eye_light.jpg")
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()

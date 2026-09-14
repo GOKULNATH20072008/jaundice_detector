@@ -80,28 +80,31 @@ JAUNDICE DETECTED with a confidence score.
 
 ### Semantic "real human eye" gate
 
-Before any Haar cascade or classifier runs, `/predict` calls a vision LLM
-(`claude-sonnet-4-6` via the Anthropic Messages API) to confirm the upload is a
-genuine close-up photograph of a real human eye. Posters, artwork, screenshots,
-animal/cartoon/doll eyes, photo-of-photos, and random objects are rejected with
-`NOT_AN_EYE` up front. The gate fails **closed** — a missing key, timeout, or
-malformed response never lets an image through.
+Before any Haar cascade or classifier runs, `/predict` optionally calls a vision
+LLM (`claude-sonnet-4-6` via the Anthropic Messages API) to confirm the upload
+is a genuine close-up photograph of a real human eye. Posters, artwork,
+screenshots, animal/cartoon/doll eyes, photo-of-photos, and random objects are
+rejected with `NOT_AN_EYE` up front.
+
+The gate is **optional** — without a key it is skipped (with a logged warning)
+and the app falls back to the existing Haar-cascade + classifier pipeline, so
+real eye photos are still detected and analyzed. When a key is configured but
+the API call fails (timeout / HTTP error / malformed JSON response), the gate
+fails closed and the upload is rejected rather than letting garbage through.
 
 Environment variables (set on Railway under Settings → Variables, or in your
-shell — never hardcode the key):
+shell / local `.env` file — never hardcode the key):
 
 ```
-ANTHROPIC_API_KEY=<your-api-key>   # required for the semantic gate
-EYE_GATE_ENABLED=true              # default true; set false to fall back to
-                                   # Haar-cascade-only behavior (logs a warning)
+ANTHROPIC_API_KEY=<your-api-key>   # optional; enables the semantic gate
+EYE_GATE_ENABLED=true              # default true; set false to force the
+                                   # Haar-cascade-only path (logs a warning)
 ```
 
-Example (local PowerShell):
+For localhost, paste your key into `jaundice\.env` (git-ignored):
 
 ```
-$env:ANTHROPIC_API_KEY="sk-ant-..."
-$env:EYE_GATE_ENABLED="true"
-python app.py
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 Run the unit tests (no API call needed — HTTP is mocked):

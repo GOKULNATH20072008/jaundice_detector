@@ -14,7 +14,7 @@ from flask import Flask, jsonify, render_template, request  # noqa: E402
 from PIL import Image  # noqa: E402
 from torchvision import models, transforms  # noqa: E402
 
-from eye_gate import gate_is_real_eye  # noqa: E402
+from eye_gate import gate_available, gate_is_real_eye  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +183,8 @@ def predict():
 
     if not EYE_GATE_ENABLED:
         logger.warning("EYE_GATE_ENABLED=false — skipping semantic eye gate, falling back to Haar-cascade-only behavior")
+    elif not gate_available():
+        logger.warning("ANTHROPIC_API_KEY not configured — semantic eye gate unavailable, falling back to Haar-cascade-only behavior")
     else:
         gate_result = gate_is_real_eye(image)
         if not gate_result["is_real_human_eye"]:
