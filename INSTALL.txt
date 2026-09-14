@@ -1,11 +1,13 @@
 # How to Install & Run
 
-This project detects jaundice from an eye photo using a fine-tuned ResNet18.
-Build for Windows with Python 3.14.
+This project screens for jaundice from a close-up eye photo using a
+fine-tuned ResNet-18 classifier with an OpenCV Haar-cascade eye detector.
+
+Zero API keys are required — everything runs locally.
 
 ## 1. Prerequisites
 
-- Python 3.14+ installed on your machine (with `pip`).
+- Python 3.10+ installed on your machine (with `pip`).
 - Git (optional, only if cloning from a repo).
 
 ## 2. Set up a virtual environment
@@ -37,10 +39,6 @@ pip install torch torchvision
 pip install -r requirements.txt
 ```
 
-Note: `requirements.txt` contains plain `torch`/`torchvision` versions; the
-CPU versions installed earlier are shown as `+cpu` in `pip freeze` and are
-handled by the separate CPU-index install above.
-
 ## 4. Create the dataset (optional)
 
 The dataset folders may already exist. If not:
@@ -60,11 +58,17 @@ If `outputs\model_jaundice.pth` does not exist yet (about 5 minutes on CPU):
 python train_jaundice.py
 ```
 
+For a reproducible training script with stratified split and honest metrics:
+
+```
+python scripts\train_jaundice.py
+```
+
 Artifacts written to `outputs\`:
-- `model_jaundice.pth`  -> trained weights
-- `label_map.json`       -> class-to-name mapping
-- `training_curves.png`  -> loss/accuracy plot
-- `confusion_matrix.png` -> confusion matrix
+- `model_jaundice.pth`  → trained weights
+- `label_map.json`       → class-to-name mapping
+- `training_curves.png`  → loss/accuracy plot
+- `confusion_matrix.png` → confusion matrix
 - `classification_report.txt`
 
 ## 6. Run the web app
@@ -75,49 +79,9 @@ python app.py
 
 Open your browser at: **http://127.0.0.1:5000**
 
-Upload an eye photo, press **Analyze**, and the app returns HEALTHY or
-JAUNDICE DETECTED with a confidence score.
+Upload an eye photo, press **Analyze**, and the app runs the full pipeline:
 
-### Semantic "real human eye" gate
-
-Before any Haar cascade or classifier runs, `/predict` optionally calls a vision
-LLM (`claude-sonnet-4-6` via the Anthropic Messages API) to confirm the upload
-is a genuine close-up photograph of a real human eye. Posters, artwork,
-screenshots, animal/cartoon/doll eyes, photo-of-photos, and random objects are
-rejected with `NOT_AN_EYE` up front.
-
-The gate is **optional** — without a key it is skipped (with a logged warning)
-and the app falls back to the existing Haar-cascade + classifier pipeline, so
-real eye photos are still detected and analyzed. When a key is configured but
-the API call fails (timeout / HTTP error / malformed JSON response), the gate
-fails closed and the upload is rejected rather than letting garbage through.
-
-Environment variables (set on Railway under Settings → Variables, or in your
-shell / local `.env` file — never hardcode the key):
-
-```
-ANTHROPIC_API_KEY=<your-api-key>   # optional; enables the semantic gate
-EYE_GATE_ENABLED=true              # default true; set false to force the
-                                   # Haar-cascade-only path (logs a warning)
-```
-
-For localhost, paste your key into `jaundice\.env` (git-ignored):
-
-```
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Run the unit tests (no API call needed — HTTP is mocked):
-
-```
-python tests\test_eye_gate.py
-```
-
-For periodic validation against the real API (requires the key):
-
-```
-python tests\run_integration.py
-```
+    upload → eye detection → eye crop → quality check → jaundice classifier → result
 
 ## 7. CLI prediction (optional)
 
@@ -133,7 +97,7 @@ python predict_jaundice.py path\to\eye_photo.jpg
   Run `.venv\Scripts\activate` then `pip install -r requirements.txt`.
 - **Port already in use**: change the port in the last line of `app.py`.
 - **Slow first start**: the first run downloads the ImageNet weights for
-  ResNet18 (~45 MB) into the torch cache.
+  ResNet-18 (~45 MB) into the torch cache.
 
 ## Disclaimer
 

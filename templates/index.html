@@ -28,6 +28,22 @@
 
     <button id="submit-btn" type="button" disabled>Analyze</button>
 
+    <!-- pipeline step indicators -->
+    <div id="steps" class="steps hidden">
+      <div class="step" id="step-eye">
+        <span class="step-icon" id="step-eye-icon">⏳</span>
+        <span class="step-label" id="step-eye-text">Detecting eye…</span>
+      </div>
+      <div class="step hidden" id="step-quality">
+        <span class="step-icon" id="step-quality-icon">⏳</span>
+        <span class="step-label" id="step-quality-text">Checking image quality…</span>
+      </div>
+      <div class="step hidden" id="step-analyze">
+        <span class="step-icon" id="step-analyze-icon">⏳</span>
+        <span class="step-label" id="step-analyze-text">Analyzing ocular region…</span>
+      </div>
+    </div>
+
     <div id="result" class="hidden">
       <div class="result-line">
         <span class="badge" id="result-badge">HEALTHY</span>
@@ -67,9 +83,17 @@
     const removeBtn = document.getElementById("clear-btn");
     const result = document.getElementById("result");
     const error = document.getElementById("error");
-    const spinner = document.getElementById("result");
 
     let selectedFile = null;
+
+    function resetUI() {
+      result.classList.add("hidden");
+      document.getElementById("warning").classList.add("hidden");
+      document.getElementById("steps").classList.add("hidden");
+      ["step-eye", "step-quality", "step-analyze"].forEach(id => {
+        document.getElementById(id).classList.add("hidden");
+      });
+    }
 
     function showPreview(file) {
       selectedFile = file;
@@ -78,21 +102,20 @@
       drop.classList.add("hidden");
       submitBtn.disabled = false;
       error.classList.add("hidden");
-      result.classList.add("hidden");
-      document.getElementById("warning").classList.add("hidden");
+      resetUI();
     }
 
     input.addEventListener("change", () => {
       if (input.files.length) showPreview(input.files[0]);
     });
 
-    ["dragover", "dragenter"].forEach((evt) =>
+    ["dragover", "dragenter"].forEach(evt =>
       drop.addEventListener(evt, (e) => {
         e.preventDefault();
         dropInner.classList.add("dragging");
       })
     );
-    ["dragleave", "drop"].forEach((evt) =>
+    ["dragleave", "drop"].forEach(evt =>
       drop.addEventListener(evt, (e) => {
         e.preventDefault();
         dropInner.classList.remove("dragging");
@@ -110,17 +133,26 @@
       previewWrap.classList.add("hidden");
       drop.classList.remove("hidden");
       submitBtn.disabled = true;
-      result.classList.add("hidden");
-      document.getElementById("warning").classList.add("hidden");
+      resetUI();
     });
+
+    function setStep(id, icon, text, show) {
+      const el = document.getElementById(id);
+      if (show) el.classList.remove("hidden");
+      document.getElementById(id + "-icon").textContent = icon;
+      document.getElementById(id + "-text").textContent = text;
+    }
 
     submitBtn.addEventListener("click", async () => {
       if (!selectedFile) return;
       submitBtn.disabled = true;
       submitBtn.textContent = "Analyzing…";
       error.classList.add("hidden");
-      result.classList.add("hidden");
-      document.getElementById("warning").classList.add("hidden");
+      resetUI();
+
+      // show step 1 immediately
+      document.getElementById("steps").classList.remove("hidden");
+      setStep("step-eye", "⏳", "Detecting eye…", true);
 
       const form = new FormData();
       form.append("image", selectedFile);
@@ -133,30 +165,79 @@
         const warning = document.getElementById("warning");
         warning.classList.add("hidden");
 
-        if (data.warning) {
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
+        // ── invalid: no eye detected ───────────────────────────────────
+        if (data.status === "invalid") {
+          setStep("step-eye", "❌", data.message, true);
+          setStep("step-quality", "", "", false);
+          setStep("step-analyze", "", "", false);
+          warning.className = "warning";
+          document.getElementById("warning-text").textContent = data.message;
           warning.classList.remove("hidden");
-          warning.className = "warning " + (data.tone === "error" ? "error-tone" : "");
-          document.getElementById("warning-text").textContent = data.warning;
           return;
         }
 
-        const isJaundice = data.class === "jaundice_eye";
-        document.getElementById("result-badge").textContent = isJaundice
-          ? "JAUNDICE DETECTED"
-          : "HEALTHY";
+        // ── poor quality ───────────────────────────────────────────────
+        if (data.status === "poor_quality") {
+          setStep("step-eye", "✓", "Eye detected", true);
+          setStep("step-quality", "❌", data.message, true);
+          setStep("step-analyze", "", "", false);
+          warning.className = "warning";
+          document.getElementById("warning-text").textContent = data.message;
+          warning.classList.remove("hidden");
+          return;
+        }
+
+        // ── uncertain ──────────────────────────────────────────────────
+        if (data.status === "uncertain") {
+          setStep("step-eye", "✓", "Eye detected", true);
+          setStep("step-quality", "✓", "Image quality acceptable", true);
+          setStep("step-analyze", "⚠", "Uncertain result", true);
+          warning.className = "warning";
+          document.getElementById("warning-text").textContent = data.message;
+          warning.classList.remove("hidden");
+          return;
+        }
+
+        // ── error ──────────────────────────────────────────────────────
+        if (data.status === "error") {
+          setStep("step-eye", "✓", "Eye detected", true);
+          setStep("step-quality", "✓", "Image quality acceptable", true);
+          setStep("step-analyze", "❌", "Analysis failed", true);
+          warning.className = "warning error-tone";
+          document.getElementById("warning-text").textContent = data.message;
+          warning.classList.remove("hidden");
+          return;
+        }
+
+        // ── success ────────────────────────────────────────────────────
+        setStep("step-eye", "✓", "Eye detected", true);
+        setStep("step-quality", "✓", "Image quality acceptable", true);
+        setStep("step-analyze", "✓", "Analysis complete", true);
+
+        const isJaundice = data.prediction === "jaundice_detected";
+        document.getElementById("result-badge").textContent =
+          isJaundice ? "JAUNDICE DETECTED" : "HEALTHY";
         document.getElementById("result-badge").className =
           "badge " + (isJaundice ? "red" : "green");
         document.getElementById("result-conf").textContent =
-          "Model confidence · " + (data.confidence * 100).toFixed(1) + "%";
+          "Model confidence · " + (data.model_confidence * 100).toFixed(1) + "%";
 
-        const pHealthy = (data.probabilities["healthy_eye"] * 100).toFixed(1);
-        const pJaundice = (data.probabilities["jaundice_eye"] * 100).toFixed(1);
+        // use the per-class probabilities from a secondary call if available,
+        // otherwise just show the bar for the predicted class
+        const conf = data.model_confidence;
+        const pHealthy = isJaundice ? ((1 - conf) * 100).toFixed(1) : (conf * 100).toFixed(1);
+        const pJaundice = isJaundice ? (conf * 100).toFixed(1) : ((1 - conf) * 100).toFixed(1);
         document.getElementById("bar-healthy").style.width = pHealthy + "%";
         document.getElementById("pct-healthy").textContent = pHealthy + "%";
         document.getElementById("bar-jaundice").style.width = pJaundice + "%";
         document.getElementById("pct-jaundice").textContent = pJaundice + "%";
 
         result.classList.remove("hidden");
+
       } catch (err) {
         error.textContent = err.message;
         error.classList.remove("hidden");

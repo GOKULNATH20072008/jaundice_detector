@@ -3,5 +3,4 @@ gunicorn
 torch
 torchvision
 Pillow
-requests
 opencv-python-headless==4.14.0.94
