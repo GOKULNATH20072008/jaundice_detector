@@ -10,7 +10,7 @@
   <main class="card">
     <div class="badge">AI · Eye Screening</div>
     <h1>Jaundice Detector</h1>
-    <p class="subtitle">Upload an eye photo and check for jaundice.</p>
+    <p class="subtitle">Upload a close-up eye photo to screen for jaundice.</p>
 
     <label id="drop" for="file-input">
       <input id="file-input" type="file" accept="image/*" hidden>
@@ -45,6 +45,7 @@
           <span id="pct-jaundice">0%</span>
         </div>
       </div>
+      <p class="probability-note">Model output — not a clinical probability.</p>
     </div>
 
     <div id="warning" class="warning hidden">
@@ -53,7 +54,7 @@
     </div>
 
     <p id="error" class="error hidden"></p>
-    <p class="disclaimer">For screening only — not a medical diagnosis. Consult a doctor.</p>
+    <p class="disclaimer">AI screening prototype — not a medical diagnosis. Consult a doctor.</p>
   </main>
 
   <script>
@@ -134,6 +135,7 @@
 
         if (data.warning) {
           warning.classList.remove("hidden");
+          warning.className = "warning " + (data.tone === "error" ? "error-tone" : "");
           document.getElementById("warning-text").textContent = data.warning;
           return;
         }
@@ -145,7 +147,7 @@
         document.getElementById("result-badge").className =
           "badge " + (isJaundice ? "red" : "green");
         document.getElementById("result-conf").textContent =
-          "Confidence " + (data.confidence * 100).toFixed(1) + "%";
+          "Model confidence · " + (data.confidence * 100).toFixed(1) + "%";
 
         const pHealthy = (data.probabilities["healthy_eye"] * 100).toFixed(1);
         const pJaundice = (data.probabilities["jaundice_eye"] * 100).toFixed(1);

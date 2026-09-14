@@ -23,7 +23,18 @@ LOW_CONFIDENCE = 0.92
 MIN_IMG_EDGE = 100
 MAX_IMG_EDGE = 2600
 MIN_EYE_BOX_RATIO = 0.05
+MIN_EYE_BOX_PX = 20
 EYE_PADDING = 0.35
+
+# image-quality thresholds (calibrated on the dataset eye regions)
+BLUR_LAPLACIAN_VAR = 50.0
+MIN_REGION_MEAN = 55.0
+MAX_REGION_MEAN = 210.0
+MIN_REGION_STD = 18.0
+
+MSG_NON_EYE = "No valid human eye detected. Please upload a clear photo of a human eye."
+MSG_QUALITY = "Image quality is insufficient. Please upload a clearer, well-lit eye photo."
+MSG_MODEL_ERROR = "Unable to analyze this image. Please try again."
 
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
@@ -110,6 +121,26 @@ def extract_eye_region(image):
     return image.crop((x0, y0, x1, y1))
 
 
+def assess_quality(region, eye_box):
+    _, _, ew, eh, _ = eye_box
+    if min(ew, eh) < MIN_EYE_BOX_PX:
+        return "eye_too_small"
+
+    gray = np.asarray(region.convert("L"))
+    grayf = gray.astype(np.float32)
+
+    if cv2.Laplacian(gray, cv2.CV_64F).var() < BLUR_LAPLACIAN_VAR:
+        return "blurry"
+    mean_bright = grayf.mean()
+    if mean_bright < MIN_REGION_MEAN:
+        return "too_dark"
+    if mean_bright > MAX_REGION_MEAN:
+        return "too_bright"
+    if grayf.std() < MIN_REGION_STD:
+        return "low_contrast"
+    return "ok"
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -148,7 +179,8 @@ def predict():
         return jsonify(
             {
                 "result": "NOT_AN_EYE",
-                "warning": "No eye detected in the image. Please upload a clear photo of an eye.",
+                "tone": "warning",
+                "warning": MSG_NON_EYE,
             }
         )
 
@@ -158,28 +190,35 @@ def predict():
         return jsonify(
             {
                 "result": "EYE_TOO_SMALL",
+                "tone": "warning",
                 "warning": (
                     "The eye is too small in the photo — it looks zoomed out. "
-                    "Please upload a close-up of the eye, like the sample below."
+                    "Please upload a close-up of the eye."
                 ),
             }
         )
 
     region = extract_eye_region(image)
+    quality = assess_quality(region, eye_box)
+    if quality != "ok":
+        return jsonify({"result": "POOR_QUALITY", "tone": "warning", "warning": MSG_QUALITY})
 
-    model = get_model()
-    label_map = get_label_map()
-
-    tensor = eye_transform(region).unsqueeze(0)
-    with torch.no_grad():
-        logits = model(tensor)
-        prob = torch.softmax(logits, dim=1)[0]
-        confidence = float(prob[1].item())
+    try:
+        model = get_model()
+        label_map = get_label_map()
+        tensor = eye_transform(region).unsqueeze(0)
+        with torch.no_grad():
+            logits = model(tensor)
+            prob = torch.softmax(logits, dim=1)[0]
+            confidence = float(prob[1].item())
+    except Exception:
+        return jsonify({"result": "MODEL_ERROR", "tone": "error", "warning": MSG_MODEL_ERROR})
 
     if confidence < LOW_CONFIDENCE and float(prob[0].item()) < LOW_CONFIDENCE:
         return jsonify(
             {
                 "result": "UNCERTAIN",
+                "tone": "warning",
                 "warning": "The photo is not clear enough for a reliable result. Please upload a clear, well-lit close-up of the eye.",
                 "confidence": round(max(confidence, float(prob[0].item())), 4),
                 "probabilities": {
@@ -204,6 +243,7 @@ def predict():
         {
             "class": class_name,
             "result": result,
+            "tone": "ok",
             "confidence": round(confidence, 4),
             "probabilities": {
                 label_map["0"]: round(float(prob[0]), 4),

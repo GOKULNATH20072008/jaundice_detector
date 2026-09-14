@@ -178,7 +178,7 @@ h1 {
 .warning {
   margin-top: 16px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   background: #fffbeb;
   border: 1px solid #f59e0b;
@@ -187,6 +187,12 @@ h1 {
   font-size: 14px;
   color: #92400e;
   line-height: 1.4;
+}
+
+.warning.error-tone {
+  background: #fef2f2;
+  border-color: #dc2626;
+  color: #991b1b;
 }
 
 .warning-icon {
@@ -199,6 +205,14 @@ h1 {
   font-size: 11px;
   text-align: center;
   color: #94a3b8;
+}
+
+.probability-note {
+  margin-top: 6px;
+  font-size: 11px;
+  text-align: center;
+  color: #94a3b8;
+  font-style: italic;
 }
 
 .hidden { display: none !important; }
