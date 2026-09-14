@@ -3,4 +3,4 @@ gunicorn
 torch
 torchvision
 Pillow
-gunicorn
+opencv-python-headless

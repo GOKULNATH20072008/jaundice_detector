@@ -47,6 +47,11 @@
       </div>
     </div>
 
+    <div id="warning" class="warning hidden">
+      <span class="warning-icon">⚠</span>
+      <span id="warning-text"></span>
+    </div>
+
     <p id="error" class="error hidden"></p>
     <p class="disclaimer">For screening only — not a medical diagnosis. Consult a doctor.</p>
   </main>
@@ -73,6 +78,7 @@
       submitBtn.disabled = false;
       error.classList.add("hidden");
       result.classList.add("hidden");
+      document.getElementById("warning").classList.add("hidden");
     }
 
     input.addEventListener("change", () => {
@@ -104,6 +110,7 @@
       drop.classList.remove("hidden");
       submitBtn.disabled = true;
       result.classList.add("hidden");
+      document.getElementById("warning").classList.add("hidden");
     });
 
     submitBtn.addEventListener("click", async () => {
@@ -112,6 +119,7 @@
       submitBtn.textContent = "Analyzing…";
       error.classList.add("hidden");
       result.classList.add("hidden");
+      document.getElementById("warning").classList.add("hidden");
 
       const form = new FormData();
       form.append("image", selectedFile);
@@ -120,6 +128,15 @@
         const resp = await fetch("/predict", { method: "POST", body: form });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || "Something went wrong");
+
+        const warning = document.getElementById("warning");
+        warning.classList.add("hidden");
+
+        if (data.warning) {
+          warning.classList.remove("hidden");
+          document.getElementById("warning-text").textContent = data.warning;
+          return;
+        }
 
         const isJaundice = data.class === "jaundice_eye";
         document.getElementById("result-badge").textContent = isJaundice

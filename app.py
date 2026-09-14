@@ -6,6 +6,8 @@ import threading
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
 import torch  # noqa: E402
 from flask import Flask, jsonify, render_template, request  # noqa: E402
 from PIL import Image  # noqa: E402
@@ -17,6 +19,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "outputs", "model_jaundice.pth")
 LABEL_MAP_PATH = os.path.join(BASE_DIR, "outputs", "label_map.json")
 ALLOWED_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/bmp"}
+LOW_CONFIDENCE = 0.55
 
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
@@ -34,6 +37,7 @@ app = Flask(__name__)
 
 _model = None
 _label_map = None
+_eye_cascades = None
 _model_lock = threading.Lock()
 
 
@@ -58,6 +62,29 @@ def get_label_map():
     return _label_map
 
 
+def get_eye_cascades():
+    global _eye_cascades
+    with _model_lock:
+        if _eye_cascades is None:
+            cascade_dir = os.path.join(os.path.dirname(cv2.__file__), "data")
+            _eye_cascades = [
+                cv2.CascadeClassifier(os.path.join(cascade_dir, "haarcascade_eye.xml")),
+                cv2.CascadeClassifier(os.path.join(cascade_dir, "haarcascade_eye_tree_eyeglasses.xml")),
+                cv2.CascadeClassifier(os.path.join(cascade_dir, "haarcascade_lefteye_2splits.xml")),
+                cv2.CascadeClassifier(os.path.join(cascade_dir, "haarcascade_righteye_2splits.xml")),
+            ]
+    return _eye_cascades
+
+
+def is_eye_image(image):
+    gray = np.asarray(image.convert("L"))
+    for cascade in get_eye_cascades():
+        eyes = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=1, minSize=(12, 12))
+        if len(eyes) > 0:
+            return True
+    return False
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -79,6 +106,14 @@ def predict():
     except Exception:
         return jsonify({"error": "Could not read image"}), 400
 
+    if not is_eye_image(image):
+        return jsonify(
+            {
+                "result": "NOT_AN_EYE",
+                "warning": "No eye detected in the image. Please upload a clear photo of the eye.",
+            }
+        )
+
     model = get_model()
     label_map = get_label_map()
 
@@ -88,6 +123,19 @@ def predict():
         prob = torch.softmax(logits, dim=1)[0]
         pred_class = int(logits.argmax(dim=1).item())
         confidence = float(prob[pred_class].item())
+
+    if confidence < LOW_CONFIDENCE:
+        return jsonify(
+            {
+                "result": "UNCERTAIN",
+                "warning": "The image is unclear. Please upload a clear, well-lit photo of the eye.",
+                "confidence": round(confidence, 4),
+                "probabilities": {
+                    label_map["0"]: round(float(prob[0]), 4),
+                    label_map["1"]: round(float(prob[1]), 4),
+                },
+            }
+        )
 
     class_name = label_map[str(pred_class)]
     result = "JAUNDICE DETECTED" if class_name == "jaundice_eye" else "HEALTHY"
