@@ -1,11 +1,17 @@
 import io
 import json
 import os
+import threading
 
-import torch
-from flask import Flask, jsonify, render_template, request
-from PIL import Image
-from torchvision import models, transforms
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+
+import torch  # noqa: E402
+from flask import Flask, jsonify, render_template, request  # noqa: E402
+from PIL import Image  # noqa: E402
+from torchvision import models, transforms  # noqa: E402
+
+torch.set_num_threads(1)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "outputs", "model_jaundice.pth")
@@ -26,13 +32,30 @@ transform = transforms.Compose(
 
 app = Flask(__name__)
 
-model = models.resnet18(weights=None)
-model.fc = torch.nn.Linear(model.fc.in_features, 2)
-model.load_state_dict(torch.load(MODEL_PATH, weights_only=True, map_location="cpu"))
-model.eval()
+_model = None
+_label_map = None
+_model_lock = threading.Lock()
 
-with open(LABEL_MAP_PATH, "r") as f:
-    label_map = json.load(f)
+
+def get_model():
+    global _model
+    with _model_lock:
+        if _model is None:
+            model = models.resnet18(weights=None)
+            model.fc = torch.nn.Linear(model.fc.in_features, 2)
+            model.load_state_dict(torch.load(MODEL_PATH, weights_only=True, map_location="cpu"))
+            model.eval()
+            _model = model
+    return _model
+
+
+def get_label_map():
+    global _label_map
+    with _model_lock:
+        if _label_map is None:
+            with open(LABEL_MAP_PATH, "r") as f:
+                _label_map = json.load(f)
+    return _label_map
 
 
 @app.route("/")
@@ -55,6 +78,9 @@ def predict():
         image = Image.open(io.BytesIO(file.read())).convert("RGB")
     except Exception:
         return jsonify({"error": "Could not read image"}), 400
+
+    model = get_model()
+    label_map = get_label_map()
 
     tensor = transform(image).unsqueeze(0)
     with torch.no_grad():
