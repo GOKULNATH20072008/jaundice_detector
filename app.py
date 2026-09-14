@@ -78,10 +78,16 @@ def get_eye_cascades():
 
 def is_eye_image(image):
     gray = np.asarray(image.convert("L"))
-    for cascade in get_eye_cascades():
-        eyes = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=1, minSize=(12, 12))
-        if len(eyes) > 0:
-            return True
+    for scale in (1, 2):
+        if scale == 1:
+            target = gray
+        else:
+            h, w = gray.shape
+            target = cv2.resize(gray, (max(32, w * 2), max(32, h * 2)))
+        for cascade in get_eye_cascades():
+            eyes = cascade.detectMultiScale(target, scaleFactor=1.1, minNeighbors=1, minSize=(12, 12))
+            if len(eyes) > 0:
+                return True
     return False
 
 
