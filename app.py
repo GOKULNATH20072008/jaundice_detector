@@ -19,17 +19,18 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "outputs", "model_jaundice.pth")
 LABEL_MAP_PATH = os.path.join(BASE_DIR, "outputs", "label_map.json")
 ALLOWED_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/bmp"}
-LOW_CONFIDENCE = 0.55
+LOW_CONFIDENCE = 0.92
 MIN_IMG_EDGE = 100
 MAX_IMG_EDGE = 2600
+MIN_EYE_BOX_RATIO = 0.05
+EYE_PADDING = 0.35
 
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
 
-transform = transforms.Compose(
+eye_transform = transforms.Compose(
     [
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(mean=MEAN, std=STD),
     ]
@@ -78,19 +79,35 @@ def get_eye_cascades():
     return _eye_cascades
 
 
-def is_eye_image(image):
+def get_eye_box(image):
     gray = np.asarray(image.convert("L"))
-    for scale in (1, 2):
-        if scale == 1:
-            target = gray
-        else:
-            h, w = gray.shape
-            target = cv2.resize(gray, (max(32, w * 2), max(32, h * 2)))
+    best = None
+    h, w = gray.shape
+    targets = [(gray, 1), (cv2.resize(gray, (max(32, w * 2), max(32, h * 2))), 2)]
+    for target, scale in targets:
         for cascade in get_eye_cascades():
-            eyes = cascade.detectMultiScale(target, scaleFactor=1.1, minNeighbors=1, minSize=(12, 12))
-            if len(eyes) > 0:
-                return True
-    return False
+            for x, y, bw, bh in cascade.detectMultiScale(target, scaleFactor=1.1, minNeighbors=1, minSize=(12, 12)):
+                area = (bw / scale) * (bh / scale)
+                if best is None or area > best[4]:
+                    best = (int(x / scale), int(y / scale), int(bw / scale), int(bh / scale), area)
+    return best
+
+
+def is_eye_image(image):
+    return get_eye_box(image) is not None
+
+
+def extract_eye_region(image):
+    box = get_eye_box(image)
+    if box is None:
+        return None
+    x, y, w, h, _ = box
+    pad = int(EYE_PADDING * max(w, h))
+    x0 = max(0, x - pad)
+    y0 = max(0, y - pad)
+    x1 = min(image.width, x + w + pad)
+    y1 = min(image.height, y + h + pad)
+    return image.crop((x0, y0, x1, y1))
 
 
 @app.route("/")
@@ -126,30 +143,45 @@ def predict():
             }
         ), 400
 
-    if not is_eye_image(image):
+    eye_box = get_eye_box(image)
+    if eye_box is None:
         return jsonify(
             {
                 "result": "NOT_AN_EYE",
-                "warning": "No eye detected in the image. Please upload a clear photo of the eye.",
+                "warning": "No eye detected in the image. Please upload a clear photo of an eye.",
             }
         )
+
+    x, y, w, h, _ = eye_box
+    eye_size_ratio = min(w, h) / min(width, height)
+    if eye_size_ratio < MIN_EYE_BOX_RATIO:
+        return jsonify(
+            {
+                "result": "EYE_TOO_SMALL",
+                "warning": (
+                    "The eye is too small in the photo — it looks zoomed out. "
+                    "Please upload a close-up of the eye, like the sample below."
+                ),
+            }
+        )
+
+    region = extract_eye_region(image)
 
     model = get_model()
     label_map = get_label_map()
 
-    tensor = transform(image).unsqueeze(0)
+    tensor = eye_transform(region).unsqueeze(0)
     with torch.no_grad():
         logits = model(tensor)
         prob = torch.softmax(logits, dim=1)[0]
-        pred_class = int(logits.argmax(dim=1).item())
-        confidence = float(prob[pred_class].item())
+        confidence = float(prob[1].item())
 
-    if confidence < LOW_CONFIDENCE:
+    if confidence < LOW_CONFIDENCE and float(prob[0].item()) < LOW_CONFIDENCE:
         return jsonify(
             {
                 "result": "UNCERTAIN",
-                "warning": "The image is unclear. Please upload a clear, well-lit photo of the eye.",
-                "confidence": round(confidence, 4),
+                "warning": "The photo is not clear enough for a reliable result. Please upload a clear, well-lit close-up of the eye.",
+                "confidence": round(max(confidence, float(prob[0].item())), 4),
                 "probabilities": {
                     label_map["0"]: round(float(prob[0]), 4),
                     label_map["1"]: round(float(prob[1]), 4),
@@ -157,8 +189,16 @@ def predict():
             }
         )
 
+    if confidence >= LOW_CONFIDENCE:
+        result = "JAUNDICE DETECTED"
+        pred_class = 1
+        confidence = confidence
+    else:
+        result = "HEALTHY"
+        pred_class = 0
+        confidence = float(prob[0].item())
+
     class_name = label_map[str(pred_class)]
-    result = "JAUNDICE DETECTED" if class_name == "jaundice_eye" else "HEALTHY"
 
     return jsonify(
         {
